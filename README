@@ -1,10 +1,10 @@
-                                       ▗▄▖   ▗▄      ▗▖
-                                       █▀▜   ▟█  ▐▌  ▐▌
-                        ▟██▖ █▟█▌▐█▙█▖▐▌▄▖  ▐▘█ ▐███ ▐▙██▖
-                        ▘▄▟▌ █▘  ▐▌█▐▌▐█▀█▖▗▛ █  ▐▌  ▐▛ ▐▌
-                       ▗█▀▜▌ █   ▐▌█▐▌▐▌ ▐▌▐███▌ ▐▌  ▐▌ ▐▌
-                       ▐▙▄█▌ █   ▐▌█▐▌▝█▄█▘   █  ▐▙▄ ▐▌ ▐▌
-                        ▀▀▝▘ ▀   ▝▘▀▝▘ ▝▀▘    ▀   ▀▀ ▝▘ ▝▘
+                    ▗▄▖   ▗▄      ▗▖
+                    █▀▜   ▟█  ▐▌  ▐▌
+     ▟██▖ █▟█▌▐█▙█▖▐▌▄▖  ▐▘█ ▐███ ▐▙██▖
+     ▘▄▟▌ █▘  ▐▌█▐▌▐█▀█▖▗▛ █  ▐▌  ▐▛ ▐▌
+    ▗█▀▜▌ █   ▐▌█▐▌▐▌ ▐▌▐███▌ ▐▌  ▐▌ ▐▌
+    ▐▙▄█▌ █   ▐▌█▐▌▝█▄█▘   █  ▐▙▄ ▐▌ ▐▌
+     ▀▀▝▘ ▀   ▝▘▀▝▘ ▝▀▘    ▀   ▀▀ ▝▘ ▝▘
 
 A Forth for Apple Silicon bootstrapped from a small kernel written in arm64
 assembly. This is a 64 bit, indirect threaded Forth which runs on recent
@@ -31,7 +31,8 @@ toolchain (i.e. clang) to build it.
 See `demo.f` for a tiny crash course on Forth and the syntax supported by
 this system.
 
-                                ACKNOWLEDGEMENTS
+
+ACKNOWLEDGEMENTS
 
 This project is my first experience with Forth and I was helped immensely
 by several resources.
@@ -57,6 +58,6 @@ by several resources.
      https://github.com/nineties/planckforth
 
 
-                                     LICENSE
+LICENSE
 
 Good luck, have fun.
