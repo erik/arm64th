@@ -974,6 +974,7 @@ VARIABLE streams
 -3 CONSTANT sig-eof
 -4 CONSTANT err-undefined-word
 -5 CONSTANT err-quit
+-6 CONSTANT err-stack-underflow
 
 VARIABLE source-buffer
     BUFSIZE ALLOT
@@ -1040,46 +1041,55 @@ VARIABLE word-len
     THEN
 ;
 
+\ Print an error along with the line of code raising it.
+: format-error ( err -- )
+    streams @
+        DUP stream>lineno @
+        SWAP stream>name c-str>
+
+    CR TELL ." :" .
+    word-len @ ?DUP IF
+        ." @ '"
+        word-buffer SWAP TELL
+        ." ' "
+    THEN
+
+    CASE
+        err-abort OF ." [ Aborted ]" ENDOF
+        err-unexpected-eof OF ." [ Unexpected EOF ]" ENDOF
+        err-undefined-word OF ." undefined word" ENDOF
+        err-stack-underflow OF ." stack underflow" ENDOF
+        ( else ) ." unknown exception: " DUP .
+    ENDCASE
+
+    CR
+
+    \ Print out where the error occurred if there's
+    \ something useful in the input buffer
+    SOURCE ?DUP IF
+        SPACE TELL           \ print the line
+        >IN @ word-len @ -   \ point to start of word
+        1 MAX 0 ?DO
+            [CHAR] ~ EMIT
+        LOOP
+        [CHAR] ^ EMIT CR
+    ELSE
+        DROP
+    THEN
+;
+
 : (interpret-loop)
     BEGIN
         ['] INTERPRET CATCH
-        ?DUP IF
-            DUP sig-eof = IF THROW THEN
+        \ EOF here is "clean" and represents the actual end of file (rather
+        \ than in the middle of reading something important). Propagate it up.
+        DUP sig-eof = IF THROW THEN
 
-            streams @
-                DUP stream>lineno @
-                SWAP stream>name c-str>
+        \ All other errors are real and should be reported
+        ?DUP IF format-error THEN
 
-            CR TELL ." :" .
-            word-len @ ?DUP IF
-                ." @ '"
-                word-buffer SWAP TELL
-                ." ' "
-            THEN
-
-            CASE
-                err-abort OF ." [ Aborted ]" ENDOF
-                err-unexpected-eof OF ." [ Unexpected EOF ]" ENDOF
-                err-undefined-word OF ." undefined word" ENDOF
-                ( else ) ." unknown exception: " DUP .
-            ENDCASE
-
-            CR
-
-            \ Print out where the error occurred if there's
-            \ something useful in the input buffer
-            SOURCE ?DUP IF
-                SPACE TELL           \ print the line
-                >IN @ word-len @ -   \ point to start of word
-                1 MAX 0 ?DO
-                    [CHAR] ~ EMIT
-                LOOP
-                [CHAR] ^ EMIT CR
-            ELSE
-                DROP
-            THEN
-
-        THEN
+        \ Check if the stack pointer is out of bounds
+        SP@ SP0 > IF err-stack-underflow format-error THEN
     AGAIN
 ;
 

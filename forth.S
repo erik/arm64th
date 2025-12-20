@@ -116,17 +116,7 @@ DSP .req x28  ; data stack pointer
 
 ; Pop from data stack into \reg
 .macro POP_DS reg
-    ADR_LABEL \reg, DATA_STACK_TOP
-    sub       \reg, DSP, \reg
-    cbz       \reg, 1f
-    b         2f
-1:
-    PRINT_FMT "ERR STACK UNDERFLOW\n"
-    mov       \reg, xzr
-    b         3f
-2:
     ldr       \reg, [DSP], #8
-3:
 .endm
 
 ; Load address of label into \reg
