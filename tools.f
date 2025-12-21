@@ -26,12 +26,6 @@ VARIABLE stack-effect-ptr
 
 : 0}GUARD ( -- ) 0 }GUARD ;
 
-: word>prev      @ ;
-: word>flags     CELL+ c@ ;
-: word>name-len  CELL+ 1+ C@ ;
-: word>name      DUP word>name-len SWAP CELL+ 2 + SWAP ;
-: word>entry     word>name + ALIGNED ;
-
 : printable? ( ch -- b ) BL '~' BETWEEN ;
 
 : dump-ascii ( addr len -- )
@@ -116,14 +110,14 @@ VARIABLE stack-effect-ptr
            ." ' [ " DUP @ hex. ']' EMIT CR
     CR
 
-    DUP word>entry @ DOCOL = UNLESS
+    >CFA
+    DUP @ DOCOL = UNLESS
         ."   ( assembled word )" cr
         ';' EMIT CR
         DROP
         EXIT
     THEN
 
-    word>entry
     BEGIN
         CELL+
         DUP @ $fafafafa

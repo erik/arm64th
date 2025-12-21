@@ -130,12 +130,11 @@ T{ : t2 IMMEDIATE 456 ; -> }T
 T{ : t3 t1 t2 ;         -> 456 }T
 T{ t3                   -> 123 }T
 
-\ TODO: implement POSTPONE
-\ T{ : t4 IMMEDIATE POSTPONE t1 ;       -> }T
-\ T{ : t5 t4 ;                          -> }T
-\ T{ t5                                 -> 123 }T
-\ T{ : t6 IMMEDIATE POSTPONE t2 ;       -> }T
-\ T{ t6                                 -> 456 }T
+T{ : t4 IMMEDIATE POSTPONE t1 ;       -> }T
+T{ : t5 t4 ;                          -> }T
+T{ t5                                 -> 123 }T
+T{ : t6 IMMEDIATE POSTPONE t2 ;       -> }T
+T{ t6                                 -> 456 }T
 
 TESTING" catch / throw"
 : t1 9 ;

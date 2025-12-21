@@ -130,21 +130,15 @@
 \
 \ Conceptually similar to `' word ,` if `word` is immediate.
 : [COMPILE] IMMEDIATE
-    BL WORD
-    FIND
-    >CFA ,
-;
+    BL WORD FIND >CFA , ;
 
 \ "compile time tick". Leaves execution token (addr) of word on the stack
 : ['] IMMEDIATE ( -- xt )
-    ' LIT ,
-;
+    ' LIT , ;
 
 \ Compile-time CHAR
 : [CHAR] IMMEDIATE
-    CHAR
-    [COMPILE] LITERAL
-;
+    CHAR [COMPILE] LITERAL ;
 
 \
 \ Basic helper utils
@@ -194,10 +188,7 @@
 ;
 
 \ Copy head of return stack to data stack
-: R@ ( R: a -- a )
-    RP@ CELL+ @
-;
-
+: R@ ( R: a -- a ) RP@ CELL+ @ ;
 : RDROP ( R:a -- ) R> RP@ ! ;
 : RPICK ( R:xn x0 n -- xn ) CELLS RP@ + CELL + @ ;
 
@@ -289,10 +280,8 @@
 \ 1 4 aligned-by -- 4
 \ ( a b-1 & ~(b-1) )
 : aligned-by ( a b -- a' )
-    1- DUP
-    INVERT
-    -ROT +
-    AND
+    1- DUP INVERT
+    -ROT + AND
 ;
 
 \ Align HERE by `a`
@@ -302,13 +291,32 @@
 ;
 
 \ Align input to cell size (e.g. 3 -> 8, 15 -> 16)
-: ALIGNED ( a -- a )
-    CELL aligned-by
-;
+: ALIGNED ( a -- a ) CELL aligned-by ;
 
 \ Update HERE to be cell aligned
-: ALIGN  ( -- )
-    CELL align-by
+: ALIGN  ( -- ) CELL align-by ;
+
+: immediate-bit 1 ;
+: hidden-bit    2 ;
+
+: word>prev      @ ;
+: word>flags     CELL+ c@ ;
+: word>name-len  CELL+ 1+ C@ ;
+: word>name      DUP word>name-len SWAP CELL+ 2 + SWAP ;
+
+\ TODO: this is still defined in Forth, move it out
+: >CFA ( addr -- addr )
+    word>name + ALIGNED ;
+
+\ Compile the compilation semantics of following word to current definition
+: POSTPONE IMMEDIATE ( -- )
+    BL WORD FIND
+    DUP word>flags immediate-bit AND IF
+        >CFA ,
+    ELSE
+        ' LIT , >CFA ,
+        ' , ,
+    THEN
 ;
 
 : ?interpreting ( -- a )
@@ -474,17 +482,13 @@
     2DROP
 ;
 
-: immediate-bit 1 ;
-: hidden-bit    2 ;
-
 \ Print all known (and not hidden) words
 : WORDS
     LATEST @
     BEGIN
         ?DUP
     WHILE
-        DUP
-        CELL+ C@ hidden-bit AND UNLESS
+        DUP word>flags hidden-bit AND UNLESS
             DUP ID. SPACE
         THEN
         @
