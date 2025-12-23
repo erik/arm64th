@@ -44,11 +44,7 @@
 \ Return first character of word after this call.
 \
 \ CHAR abc => a
-: CHAR ( -- a )
-    BL WORD
-    DROP     \ drop len (TODO: zero case?)
-    C@
-;
+: CHAR ( -- a ) BL WORD DROP C@ ;
 
 \
 \ Conditional logic
@@ -213,6 +209,46 @@
     DUP DUP 0 = IF DROP THEN ;
 
 \
+\ Alignment
+\
+
+: aligned-by ( a b -- a' ) 1- DUP INVERT -ROT + AND ;  \ Align addr `a` to size `b`
+: align-by   ( a -- ) HERE @ SWAP aligned-by HERE ! ;  \ Align HERE to size `a`
+: ALIGNED    ( a -- a ) CELL aligned-by ;              \ Align addr cell size
+: ALIGN      ( -- ) CELL align-by ;                    \ Align HERE to cell size
+
+\
+\ Word helpers
+\
+
+\ Given a word address, return various components of the word
+: word>prev     ( addr -- addr2 ) @ ;
+: word>flags    ( addr -- val ) CELL+ c@ ;
+: word>name-len ( addr -- len ) CELL+ 1+ C@ ;
+: word>name     ( addr -- addr len ) DUP word>name-len SWAP CELL+ 2 + SWAP ;
+
+: immediate-bit 1 ;
+: hidden-bit    2 ;
+
+: word>immediate? ( addr -- bool ) word>flags immediate-bit AND ;
+: word>hidden?    ( addr -- bool ) word>flags hidden-bit AND ;
+
+\ Return the address of the entry point of a word. Pointer will generally
+\ contain the address of `DOCOL` if this is a Forth word.
+: >CFA ( addr -- addr ) word>name + ALIGNED ;
+
+\ '[COMPILE] word' compiles a word that would otherwise be executed immediately
+\
+\ Conceptually similar to `' word ,` if `word` is immediate.
+: [COMPILE] IMMEDIATE BL WORD FIND >CFA , ;
+
+\ "compile time tick". Leaves execution token (addr) of word on the stack
+: ['] IMMEDIATE ( -- xt ) ' LIT , ;
+
+\ Compile-time CHAR
+: [CHAR] IMMEDIATE CHAR [COMPILE] LITERAL ;
+
+\
 \ Comparisons
 \
 
@@ -276,42 +312,10 @@
 : DEPTH     SP0 SP@ - CELL- CELL / ;
 : RDEPTH    RP0 RP@ - CELL / ;
 
-\ Align `a` to size `b`
-\ 1 4 aligned-by -- 4
-\ ( a b-1 & ~(b-1) )
-: aligned-by ( a b -- a' )
-    1- DUP INVERT
-    -ROT + AND
-;
-
-\ Align HERE by `a`
-: align-by ( a -- )
-    HERE @ SWAP aligned-by
-    HERE !
-;
-
-\ Align input to cell size (e.g. 3 -> 8, 15 -> 16)
-: ALIGNED ( a -- a ) CELL aligned-by ;
-
-\ Update HERE to be cell aligned
-: ALIGN  ( -- ) CELL align-by ;
-
-: immediate-bit 1 ;
-: hidden-bit    2 ;
-
-: word>prev      @ ;
-: word>flags     CELL+ c@ ;
-: word>name-len  CELL+ 1+ C@ ;
-: word>name      DUP word>name-len SWAP CELL+ 2 + SWAP ;
-
-\ TODO: this is still defined in Forth, move it out
-: >CFA ( addr -- addr )
-    word>name + ALIGNED ;
-
 \ Compile the compilation semantics of following word to current definition
 : POSTPONE IMMEDIATE ( -- )
     BL WORD FIND
-    DUP word>flags immediate-bit AND IF
+    DUP word>immediate? IF
         >CFA ,
     ELSE
         ' LIT , >CFA ,
@@ -468,30 +472,16 @@
     HERE +!        \ Increment *here
 ;
 
-\ Print name of the word
-: ID. ( nt -- )
-    CELL+ 1+
-    DUP C@
-    BEGIN
-        DUP 0>
-    WHILE
-        SWAP
-        1+ DUP C@ EMIT
-        SWAP 1-
-    REPEAT
-    2DROP
-;
-
 \ Print all known (and not hidden) words
 : WORDS
     LATEST @
     BEGIN
         ?DUP
     WHILE
-        DUP word>flags hidden-bit AND UNLESS
-            DUP ID. SPACE
+        DUP word>hidden? UNLESS
+            DUP word>name TELL SPACE
         THEN
-        @
+        word>prev
     REPEAT
     CR
 ;
