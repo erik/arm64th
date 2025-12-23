@@ -607,7 +607,6 @@ VARIABLE exc-handler
 : K 4 RPICK ; \ ... 3rd loop
 
 1 CONSTANT DO-MARK
-\ TODO: implement leave
 2 CONSTANT LEAVE-MARK
 
 CREATE DO-STACK 16 CELLS ALLOT
@@ -615,28 +614,47 @@ VARIABLE DO-IDX
     DO-STACK 16 CELLS + DO-IDX !
 
 \ push `a` onto the `do-stack`
-: PUSH-DO ( a -- do: a )
+: >do ( a -- do: a )
     CELL DO-IDX -!
     DO-IDX @ !
 ;
 
 \ pop `a` from the `do-stack`
-: POP-DO ( do: a -- a )
+: do> ( do: a -- a )
     DO-IDX @ @
     CELL DO-IDX +!
 ;
 
 \ peek at top of `do-stack`
-: PEEK-DO
-    DO-IDX @ @
-;
+: do@ ( -- ) DO-IDX @ @ ;
 
 \ limit initial DO loop-part LOOP
 \ limit initial DO loop-part increment +LOOP
 : DO IMMEDIATE ( C: -- do-sys ) ( limit init -- )
     ' >R , ' >R ,   \ save init and limit
-    HERE @ PUSH-DO
-    DO-MARK PUSH-DO
+    HERE @ >do
+    do-mark >do
+;
+
+\ Early return from a DO loop
+: LEAVE IMMEDIATE
+    ' BRANCH , 0 ,     \ jump with placeholder, later overwritten
+    HERE @ CELL- >do   \ push addr of placeholder to do stack
+    leave-mark >do
+;
+
+\ Update all positions where the loop called LEAVE to jump to `addr`
+: (leave) ( addr -- )
+    BEGIN
+        do@
+        leave-mark
+    = WHILE
+        do> DROP   \ drop marker
+        do>        \ LEAVE addr
+        2DUP -
+        SWAP !
+    REPEAT
+    DROP
 ;
 
 \ DO will always loop at least once, but ?DO will skip if there's nothing to
@@ -648,19 +666,8 @@ VARIABLE DO-IDX
     [COMPILE] THEN
 
     ' >R , ' >R ,   \ save init and limit
-    HERE @ PUSH-DO
-    DO-MARK PUSH-DO
-;
-
-\ Check loop bounds and jump back to the top
-: LOOP IMMEDIATE ( C: do-sys -- ) ( -- ) ( R: loop-sys -- )
-    ' R> ,   ' R> , ' 1+ ,  \ restore limit and index, increment index
-    ' 2DUP , ' >R , ' >R ,  \ copy and save
-    ' = , ' 0BRANCH ,       \ if we haven't reached the end
-    POP-DO DROP             \   ignore the marker
-    POP-DO HERE @ - ,       \   compile distance from matching `DO`
-    ' RDROP ,               \ drop start + limit
-    ' RDROP ,
+    HERE @ >do
+    do-mark >do
 ;
 
 \ Pop the loop control parameters off the return stack so the loop can be
@@ -669,6 +676,18 @@ VARIABLE DO-IDX
     ' RDROP ,
     ' RDROP ,
 ;
+
+\ Check loop bounds and jump back to the top
+: LOOP IMMEDIATE ( C: do-sys -- ) ( -- ) ( R: loop-sys -- )
+    ' R> ,   ' R> , ' 1+ ,  \ (run) restore limit and index, increment index
+    ' 2DUP , ' >R , ' >R ,  \ (run) copy and save
+    ' = , ' 0BRANCH ,       \ (run) if we haven't reached the end
+    HERE @ CELL+ (leave)    \ (comp) update `LEAVE` calls to jump past end of loop
+    do> DROP                \ (comp) drop do-marker
+    do> HERE @ - ,          \ (comp) compile distance from matching `DO`
+    POSTPONE UNLOOP         \ (run) drop the loop params from return stack
+;
+
 
 \ Because +LOOP has an arbitrary increment, we can't check for exact equality.
 \ We don't know the starting value here, just the current index and the "limit",
@@ -688,10 +707,9 @@ VARIABLE DO-IDX
     ' ROT , ' + ,               \ apply the increment              ( limit index+incr )
     ' >R , ' >R ,               \ save limit and index             ( -- incr limit index )
     ' ?LOOP-END , ' 0BRANCH ,   \ if we haven't reached the end
-    POP-DO DROP                 \   ignore the marker
-    POP-DO HERE @ - ,           \   compile distance from matching `DO`
-    ' RDROP ,                   \ drop start + limit
-    ' RDROP ,
+    do> DROP                    \ ignore the do marker
+    do> HERE @ - ,              \ compile distance from matching `DO`
+    POSTPONE UNLOOP
 ;
 
 : DECIMAL ( -- ) 10 BASE ! ;

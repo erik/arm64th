@@ -233,6 +233,8 @@ TESTING" do loops"
 T{ : loop1 DO I LOOP ;      -> }T
 T{ : loop2 DO I -1 +LOOP ;  -> }T
 T{ : loop3 ?DO I LOOP ;     -> }T
+T{ : loop4 DO I 4 > IF 999 LEAVE THEN I LOOP ; -> }T
+T{ : loop5 DO LEAVE LEAVE LEAVE I LOOP ; -> }T
 
 T{  4  1 loop1 ->  1 2 3 }T
 T{  2 -1 loop1 -> -1 0 1 }T
@@ -243,6 +245,12 @@ T{ -1 2 loop2 -> 2 1 0 -1 }T
 T{  1  1 loop3 -> }T
 T{  4  1 loop3 -> 1 2 3 }T
 T{  2 -1 loop3 -> -1 0 1 }T
+
+T{ 1 0 loop4 -> 0 }T
+T{ 5 0 loop4 -> 0 1 2 3 4 }T
+T{ 100 0 loop4 -> 0 1 2 3 4 999 }T
+
+T{ 5 0 loop5 -> }T
 
 : tt
     0
