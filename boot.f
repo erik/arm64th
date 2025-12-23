@@ -1212,18 +1212,22 @@ VARIABLE word-len
     THEN
 ;
 
-\ Print an error along with the line of code raising it.
-: format-error ( err -- )
+: print-location ( -- )
     streams @
         DUP stream>lineno @
         SWAP stream>name c-str>
 
-    CR TELL ." :" .
+    TELL ." :" .
     word-len @ ?DUP IF
         ." @ '"
         word-buffer SWAP TELL
         ." ' "
     THEN
+;
+
+\ Print an error along with the line of code raising it.
+: format-error ( err -- )
+    CR print-location
 
     CASE
         err-abort OF ." [ Aborted ]" ENDOF

@@ -83,7 +83,66 @@ VARIABLE stack-effect-ptr
     0
 ;
 
+\ Try to find the word which "contains" addr (as in, `addr` is between the CFA
+\ and end of word marker)
+\
+\ Won't help with native words yet.
+: find-containing-word ( addr -- addr? )
+    LATEST @
+    BEGIN
+        ?DUP
+    WHILE
+        2DUP >cfa CELL-
+        DUP BEGIN CELL+ DUP @ $fafafafa = UNTIL
+        WITHIN IF NIP EXIT THEN
+        word>prev
+    REPEAT
 
+    DROP
+    0
+;
+
+\ Where am I and what's going on?
+: ~~ ( -- )
+    CR
+    ." ~~{ " CR
+    3 SPACES print-location CR
+    3 SPACES ." HERE: " HERE @ hex. CR
+    3 SPACES ." <s: " DEPTH 0 u.r '>' EMIT SPACE
+    DEPTH IF
+        DEPTH 5 MIN 0 DO
+            SP0 CELL- I CELLS - @ .
+        LOOP
+        ." <- top"
+    THEN
+    CR 3 SPACES ." SOURCE: " SOURCE TELL
+    ." }~~ " CR
+;
+
+\ Primitive return stack backtrace functionality. Tries to map return stack
+\ entries to words.
+\
+\ First addresses printed are last words in.
+: .bt ( -- )
+    rdepth
+    ." <backtrace: " 0 u.r ." > " cr
+    rp0 rp@ ( beg end )
+    begin
+        2dup >=
+    while
+        dup @
+        dup h.
+        find-containing-word ?DUP IF
+            word>name ?DUP unless DROP s" :NONAME" THEN tell space
+        ELSE
+        ." (unk) " THEN
+        cr
+        cell+
+    repeat 2drop
+    cr
+;
+
+\ Shorthand to print the value at an address
 : ? ( addr -- ) @ . ;
 
 : see-prefix ( addr -- )
