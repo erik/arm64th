@@ -778,57 +778,30 @@ DEFINE_CODE ".RS", 3, 0, PRINT_RSTACK, PRINT_STACK
 
 ;; I/O utils
 
-; ( sys -- res )
-DEFINE_CODE "SYSCALL0", 8, 0, SYSCALL0, PRINT_RSTACK
-    POP_DS  x16
-    svc     0x80
-    b.cs    syscall_err
-    PUSH_DS x0
-    NEXT
-
-; ( a sys -- res )
-DEFINE_CODE "SYSCALL1", 8, 0, SYSCALL1, SYSCALL0
-    POP_DS  x16
-    POP_DS  x0
-    svc     0x80
-    b.cs    syscall_err
-    PUSH_DS x0
-    NEXT
-
-; ( b a sys -- res )
-DEFINE_CODE "SYSCALL2", 8, 0, SYSCALL2, SYSCALL1
-    POP_DS  x16
-    POP_DS  x0
-    POP_DS  x1
-    svc     0x80
-    b.cs    syscall_err
-    PUSH_DS x0
-    NEXT
-
 ; ( c b a sys -- res )
-DEFINE_CODE "SYSCALL3", 8, 0, SYSCALL3, SYSCALL2
+DEFINE_CODE "SYSCALL", 7, 0, SYSCALL, PRINT_RSTACK
     POP_DS  x16
     POP_DS  x0
     POP_DS  x1
     POP_DS  x2
     svc     0x80
-    b.cs    syscall_err
+    b.cs    1f
+
     PUSH_DS x0
     NEXT
 
-; In Darwin syscalls, the carry bit will be set for errors and x0
-; will contain `errno` (ENOENT, etc.).
-;
-; We flip this to negative so that Forth can differentiate between
-; a success and error response
-syscall_err:
-    neg     x0, x0
+    ; In Darwin syscalls, the carry bit will be set for errors and x0
+    ; will contain `errno` (ENOENT, etc.).
+    ;
+    ; We flip this to negative so that Forth can differentiate between
+    ; a success and error response
+1:  neg     x0, x0
     PUSH_DS x0
     NEXT
 
 ;; Words implemented in terms of other Forth words.
 
-DEFINE_WORD ":", 1, 0, COLON, SYSCALL3
+DEFINE_WORD ":", 1, 0, COLON, SYSCALL
     .dword CREATE                      ; Create a dictionary header for the word
     .dword LIT, DOCOL, COMMA           ; Append "DOCOL" prefix to the header
     .dword LATEST, FETCH, HIDDEN       ; Hide the current word while we define it
