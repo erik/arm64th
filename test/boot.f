@@ -307,12 +307,16 @@ TESTING" streq?"
 : s2 s" abd" ;
 : s3 s" abcde" ;
 : s4 s" xyz" ;
+: s5 s" ABC" ;
+
+T{ s" a->z" upcase s" A->Z" streq? -> TRUE }T
 
 T{ 0 0 s1 streq? -> FALSE }T
 T{ 0 0 0 0 streq? -> TRUE }T
 T{ s" abcd" s" xyz" streq? -> FALSE }T
 T{ s" abcd" s" abc" streq? -> FALSE }T
 T{ s" abc" s" abc" streq? -> TRUE }T
+T{ s" xyz" s" abc" streq? -> FALSE }T
 T{ s1 s1 streq? -> TRUE }T
 T{ s1 s2 streq? -> FALSE }T
 T{ s1 s3 streq? -> FALSE }T

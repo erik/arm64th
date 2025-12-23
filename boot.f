@@ -122,20 +122,6 @@
     SWAP !        \ ( w b d -- w d b ) -- write diff to begin offset
 ;
 
-\ '[COMPILE] word' compiles a word that would otherwise be executed immediately
-\
-\ Conceptually similar to `' word ,` if `word` is immediate.
-: [COMPILE] IMMEDIATE
-    BL WORD FIND >CFA , ;
-
-\ "compile time tick". Leaves execution token (addr) of word on the stack
-: ['] IMMEDIATE ( -- xt )
-    ' LIT , ;
-
-\ Compile-time CHAR
-: [CHAR] IMMEDIATE
-    CHAR [COMPILE] LITERAL ;
-
 \
 \ Basic helper utils
 \
@@ -147,6 +133,7 @@
 : CELL+ ( a -- a+CELL ) CELL + ;
 : CELL- ( a -- a-CELL ) CELL - ;
 : CELLS ( a -- a*CELL) CELL * ;
+: CHARS ( a -- a*CHAR) ;
 : TRUE  ( -- a )     -1 ;
 : FALSE ( -- a )      0 ;
 : NOT   ( a -- b )   FALSE = ;
@@ -341,7 +328,6 @@
         WHILE
             C,
         REPEAT
-        0 C,           \ add a null byte for good measure
         DROP           \ drop final quote char
         DUP            \ ( len_addr len_addr )
         HERE @ SWAP -  \ push length of string
@@ -361,10 +347,10 @@
             1+
         REPEAT
         DROP           \ ignore final quote
-        0 OVER 1+ C!   \ add null byte for good measure
         HERE @ -       \ calculate length
         HERE @         \ push start addr (doesn't change because of immediate mode)
         SWAP           \ ( addr len )
+        DUP HERE +!    \ advance here to end of str
     THEN
 ;
 
@@ -602,6 +588,30 @@ VARIABLE exc-handler
 
 : ABORT -1 THROW ;
 
+\
+\ Syscalls
+\
+
+0 CONSTANT no-error
+
+1 CONSTANT sys-exit  \ void exit(int rval)
+2 CONSTANT sys-fork  \ int fork(void)
+3 CONSTANT sys-read  \ ssize_t read(int fd, void *buf, size_t count)
+4 CONSTANT sys-write \ ssize_t write(int fd, const void *buf, size_t count)
+5 CONSTANT sys-open  \ int open(const char *path, int flags, mode_t mode)
+6 CONSTANT sys-close \ int close(int fd)
+
+: SYSCALL1 ( a op -- r )     >R >R 0 0 R> R> SYSCALL ;
+: SYSCALL2 ( b a op -- r )   >R >R >R 0 R> R> R> SYSCALL ;
+: SYSCALL3 ( c b a op -- r ) SYSCALL ;
+
+: DIE ( val -- ) sys-exit SYSCALL1 ;
+: BYE ( -- )     no-error DIE ;
+
+\
+\ DO..LOOP
+\
+
 : I 2 RPICK ; \ iteration of inner-most loop param
 : J 4 RPICK ; \ ... 2nd loop
 : K 4 RPICK ; \ ... 3rd loop
@@ -769,6 +779,57 @@ VARIABLE DO-IDX
     THEN
 ;
 
+\ Convert string to uppercase (mutates in place)
+: upcase ( addr u -- addr u )
+    DUP 0 DO
+        OVER I +
+        DUP C@ DUP [CHAR] a [CHAR] z BETWEEN IF
+            32 - SWAP c!
+        ELSE
+            2DROP
+        THEN
+    LOOP
+;
+
+: streq? ( addr1 u addr2 u -- b )
+    \ Check string len first
+    ROT ( a1 a2 u u )
+    OVER = UNLESS        \ length mismatch
+        3DROP FALSE EXIT
+    ELSE ?DUP UNLESS     \ length match, but both are zero
+        2DROP TRUE EXIT
+    THEN THEN
+
+    0 DO
+        ( a1 a2 )
+        DUP C@        ( a1 a2 c2 )
+        ROT DUP C@    ( a2 c2 a1 c1 )
+        ROT = UNLESS
+            2DROP
+            UNLOOP
+            FALSE EXIT
+        THEN
+        1+ SWAP 1+
+    LOOP
+
+    2DROP
+    TRUE
+;
+
+\ Counted string to null-terminated string.
+: >c-str ( addr u -- c-str )
+    \ Sanity check. There should always be a padding null, but this is going to
+    \ be painful to debug if it's missing for some reason.
+    2DUP + C@ 0= UNLESS
+        ." [bug] str missing null terminator: " tell cr
+        -1 throw
+    THEN
+    DROP
+;
+
+\ Push length of null terminated string to stack
+: c-str> ( addr -- addr len ) 0 BEGIN 2DUP + C@ WHILE 1+ REPEAT ;
+
 : ?digit     ( ch -- bool ) [CHAR] 0 [CHAR] 9 BETWEEN ;
 : ?lowercase ( ch -- bool ) 97 122 BETWEEN ;
 : ?uppercase ( ch -- bool ) 65 90 BETWEEN ;
@@ -843,11 +904,7 @@ VARIABLE DO-IDX
     CASE
         [CHAR] - OF       \ negative
             1+ SWAP 1-
-            RECURSE IF
-                INVERT 1+ TRUE
-            ELSE
-                FALSE
-            THEN
+            RECURSE IF NEGATE TRUE ELSE FALSE THEN
         ENDOF
 
         [CHAR] $ OF        \ hex
@@ -865,7 +922,7 @@ VARIABLE DO-IDX
 
             \ Check we have at least 2 more char (the actual char plus closing
             \ quote, or \escaped-char plus closing quote)
-            DUP 2 4 WITHIN UNLESS
+            DUP 2 3 BETWEEN UNLESS
                 2DROP      \ drop addr + size
                 0 FALSE    \ return value
                 EXIT
@@ -899,54 +956,67 @@ VARIABLE DO-IDX
 ;
 
 \
-\ Stage 2 interpreter
+\ Structures
 \
 
-: STRUCT{ 0 ;
+\ STRUCT{ cell% FIELD name1 ... }STRUCT name
+: STRUCT{ ( -- offset ) 0 ;
+: }STRUCT ( offset -- ) CREATE , DOES> @ CELL SWAP ;
+
 : CELL% ( -- align size ) CELL CELL ;
-: CHAR% ( -- align size ) 1 1 ;
-: BYTE% 1 1 ;
-: PTR% CELL% ;
-: INT% CELL% ;
-: I32% 4 4 ;
-: U32% 4 4 ;
-: I16% 2 2 ;
-: U16% 2 2 ;
+: BYTE% ( -- align size ) 1 1 ;
 
-: FIELD ( align size -- addr )
-    -ROT aligned-by     \ ( size offset )
-    CREATE
-        DUP ,           \ fill offset
-        +               \ new offset
-    DOES> @ +
-;
+: FIELD ( offset align size -- addr )
+    -ROT aligned-by ( size offset align -- size offset' )
+    CREATE DUP , + DOES> @ + ;
 
-: }STRUCT
-    CREATE
-        ,
-    DOES>
-        @
-        CELL SWAP
-;
-
+\ Reserve space to create a structure
 : %ALLOT ( align size -- addr )
     HERE @
-    -ROT SWAP
+    -ROT SWAP ( here size addr )
     align-by ALLOT
 ;
 
+\
+\ File I/O
+\
+
+0 CONSTANT R/O
+1 CONSTANT W/O
+2 CONSTANT R/W
+
+: OPEN-FILE ( addr u mode -- fd err )
+    >R >c-str R> SWAP
+    sys-open SYSCALL2
+    DUP 0< IF DUP ELSE no-error THEN ;
+
+: CLOSE-FILE ( fd -- err )
+    sys-close SYSCALL1
+    ?DUP 0< IF DUP ELSE no-error THEN ;
+
+: READ-FILE ( addr len fd -- len err )
+    >R SWAP R>
+    sys-read SYSCALL3 \ read(fd, &addr, len)
+    DUP 0< IF DUP ELSE no-error THEN ;
+
+\
+\ Stream reader
+\
+
 1024 CONSTANT BUFSIZE
 0    CONSTANT stdin
-0    CONSTANT EOF
+
+\ TODO: more distinctive marker value
+0   CONSTANT EOF
 
 STRUCT{
     cell%           FIELD stream>fd
-    char% 128 *     FIELD stream>name
-    char% BUFSIZE * FIELD stream>buf
+    byte% 128 *     FIELD stream>name
+    byte% BUFSIZE * FIELD stream>buf
     cell%           FIELD stream>buf-pos
     cell%           FIELD stream>buf-end
     cell%           FIELD stream>lineno
-    ptr%            FIELD stream>next
+    cell%           FIELD stream>next
 }STRUCT stream%
 
 VARIABLE streams
@@ -968,18 +1038,117 @@ VARIABLE streams
     stream>fd @
 ;
 
-\ Counted string to null-terminated string.
-: >c-str ( addr u -- c-str ) DROP ;
+\ Get the length in bytes of the data currently in this stream's
+\ buffer.
+: stream-buffer-count ( s -- len )
+    DUP stream>buf-end @ SWAP stream>buf-pos @ - ;
 
-\ Push length of null terminated string to stack
-: c-str> ( addr -- addr len )
-    0
-    BEGIN
-        2DUP + C@
-    WHILE
-        1+
-    REPEAT
+: stream-inspect ( s -- s )
+    ." stream { " cr
+    ."    base: " DUP . cr
+    ."    fd:   " DUP stream>fd DUP . @ .  cr
+    ."    name: " DUP stream>name c-str> TELL cr
+    ."    buf:  " DUP stream>buf DUP . @ . cr
+    ."    bpos  " DUP stream>buf-pos DUP . @ . cr
+    ."    bend  " DUP stream>buf-end DUP . @ . cr
+    ."    line  " DUP stream>lineno DUP . @ . cr
+    ."    next  " DUP stream>next DUP . @ . cr
+    ." }" cr
 ;
+
+: stream-buffer-clear ( s -- )
+    0 OVER stream>buf-end !
+    0 SWAP stream>buf-pos !
+;
+
+: stream-buffer-refill ( s -- len e )
+    DUP stream-buffer-clear
+
+    \ non-file based buffer, can't refill it
+    DUP stream>fd @ 0< IF DROP 0 no-error EXIT THEN
+
+    DUP >R
+
+    stream>buf
+        OVER stream>fd @
+        BUFSIZE
+        SWAP
+        READ-FILE
+
+    OVER R> stream>buf-end !
+;
+
+\ Consume `len` bytes from the stream's buffer. Doesn't refill or check that
+\ enough data is in the buffer
+: stream-buffer-copy ( to-addr len s -- len )
+    DUP stream>buf-pos @ OVER stream>buf +
+        3 PICK             \ addr
+        3 PICK             \ len
+        memcpy
+
+    stream>buf-pos OVER SWAP +!
+    NIP
+;
+
+\ Read `len` bytes from the stream into `addr`. If there aren't enough bytes
+\ left in the buffer, will read more data from the source, or return smaller
+\ than `len` bytes on EOF.
+: stream-read ( addr len s -- len err )
+    \ check if we have enough buffered data to avoid calling read()
+    DUP stream-buffer-count ( addr len s cnt )
+    2 PICK >= IF            ( addr len s )
+        stream-buffer-copy
+        no-error EXIT
+    THEN
+
+    DUP stream-buffer-count 0> IF
+        \ we need to read more data, first copy whatever was in the
+        \ buffer
+        DUP stream>buf-pos @
+        OVER stream-buffer-count DUP >R
+        4 PICK SWAP memcpy             ( addr len s )
+        ROT R@ + -ROT                  ( addr' len s )
+        SWAP R@ - SWAP                 ( addr rem' s )
+    ELSE
+        0 >R
+    THEN
+
+    \ Refill the buffer, read next `BUFSIZE` bytes from stream
+    DUP stream-buffer-refill
+
+    ?DUP IF
+        ." err read:" DUP . CR
+        >R 2DROP
+        0 R>
+        EXIT
+    THEN
+
+    ?DUP UNLESS             \ check that we've read something
+        3DROP
+        R> no-error
+        EXIT
+    THEN
+
+    SWAP >R MIN R>          \ avoid reading past end of buffer
+    stream-buffer-copy      ( addr rem s -- len )
+    R> +                    \ add whatever we transfered from the old buffer
+    no-error
+;
+
+\ read single character from stream, return EOF on end
+: stream-key ( s -- ch e )
+    >R
+    0 SP@
+    1 R> stream-read THROW
+
+    0= IF DROP EOF no-error EXIT THEN
+
+    no-error
+;
+
+\
+\ Stage 2 interpreter
+\
 
 -1 CONSTANT err-abort
 -2 CONSTANT err-unexpected-eof
@@ -988,28 +1157,19 @@ VARIABLE streams
 -5 CONSTANT err-quit
 -6 CONSTANT err-stack-underflow
 
-VARIABLE source-buffer
-    BUFSIZE ALLOT
+VARIABLE source-buffer     BUFSIZE ALLOT
+VARIABLE source-buffer-pos 0 source-buffer-pos !
+VARIABLE source-buffer-end 0 source-buffer-end !
 
-VARIABLE source-buffer-pos
-    0 source-buffer-pos !
-
-VARIABLE source-buffer-end
-    0 source-buffer-end !
+\ TODO: make use of this
+VARIABLE SOURCE-ID -1 SOURCE-ID !
 
 \ TODO: clean up native definition.
 : (source) ( -- addr len ) SOURCE ;
-
-VARIABLE SOURCE-ID
-    -1 SOURCE-ID !
-
 : SOURCE ( -- addr u ) source-buffer source-buffer-end @ ;
 : >IN    ( -- addr )   source-buffer-pos ;
 
-\ CREATE word-buffer 64 CELLS ALLOT
-VARIABLE word-buffer
-    64 ALLOT
-
+CREATE word-buffer 64 CHARS ALLOT
 VARIABLE word-len
 
 \ Forth REPL, this time hosted in Forth
@@ -1031,17 +1191,16 @@ VARIABLE word-len
     2DUP word-buffer TUCK DROP ( addr len addr buf len )
     memcpy                     \ copy word into word buffer
 
-    FIND ?DUP IF                                  \ Found the word
-        ?compiling IF                             \ compile mode
-            DUP CELL+ C@ immediate-bit AND IF     \ execute immediate word
-                >CFA EXECUTE
-            ELSE                                  \ compile the word
-                >CFA ,
-            THEN
-        ELSE                                      \ immediate mode
+    FIND ?DUP IF               \ Found the word
+        \ If word is immediate or we're interpreting, run now.
+        \ Otherwies, compile the word
+        ?interpreting OVER word>immediate? OR IF
             >CFA EXECUTE
+        ELSE
+            >CFA ,
         THEN
     ELSE
+        \ Word not found, try to parse it as a number
         word-buffer word-len @ >NUMBER UNLESS
             err-undefined-word THROW
         THEN
@@ -1105,18 +1264,6 @@ VARIABLE word-len
     AGAIN
 ;
 
-1 CONSTANT sys-exit  \ void exit(int rval)
-2 CONSTANT sys-fork  \ int fork(void)
-3 CONSTANT sys-read  \ ssize_t read(int fd, void *buf, size_t count)
-4 CONSTANT sys-write \ ssize_t write(int fd, const void *buf, size_t count)
-5 CONSTANT sys-open  \ int open(const char *path, int flags, mode_t mode)
-6 CONSTANT sys-close \ int close(int fd)
-
-0 CONSTANT success
-
-: DIE ( val -- ) sys-exit SYSCALL1 ;
-: BYE ( -- )     success DIE ;
-
 \ Enter second stage interpreter - we're self-hosted baby
 :NONAME
     \ Clear out the return stack
@@ -1133,80 +1280,9 @@ VARIABLE word-len
     DUP sig-eof = IF DROP BYE ELSE DIE THEN
 ; EXECUTE
 
-0 CONSTANT R/O
-1 CONSTANT W/O
-2 CONSTANT R/W
-
-: OPEN-FILE ( addr u mode -- fd err )
-    >R >c-str R> SWAP
-    sys-open SYSCALL2
-    DUP 0< IF DUP ELSE success THEN
-;
-
-: CLOSE-FILE ( fd -- err )
-    sys-close SYSCALL1 0< IF DUP ELSE success THEN
-;
-
-: READ-FILE ( addr len fd -- len err )
-    >R SWAP R>          \ read(fd, &addr, len)
-    sys-read SYSCALL3
-    DUP 0< IF DUP ELSE success THEN
-;
-
-\ Get the length in bytes of the data currently in this stream's
-\ buffer.
-: stream-buffer-count ( s -- len )
-    DUP stream>buf-end @ SWAP stream>buf-pos @ -
-;
-
-: stream-inspect ( s -- s )
-    ." stream { " cr
-    ."    base: " DUP . cr
-    ."    fd:   " DUP stream>fd DUP . @ .  cr
-    ."    name: " DUP stream>name c-str> TELL cr
-    ."    buf:  " DUP stream>buf DUP . @ . cr
-    ."    bpos  " DUP stream>buf-pos DUP . @ . cr
-    ."    bend  " DUP stream>buf-end DUP . @ . cr
-    ."    line  " DUP stream>lineno DUP . @ . cr
-    ."    next  " DUP stream>next DUP . @ . cr
-    ." }" cr
-;
-
-: stream-buffer-clear ( s -- )
-    0 OVER stream>buf-end !
-    0 SWAP stream>buf-pos !
-;
-
-: stream-buffer-refill ( s -- len e )
-    DUP stream-buffer-clear
-
-    \ non-file based buffer, can't refill it
-    DUP stream>fd @ 0< IF
-        DROP
-        0 0 EXIT
-    THEN
-
-    DUP >R
-
-    stream>buf
-        OVER stream>fd @
-        BUFSIZE
-        SWAP
-        READ-FILE
-
-    OVER R> stream>buf-end !
-;
-
-: stream-buffer-read ( to-addr len s -- len )
-    DUP stream>buf-pos @ OVER stream>buf +
-        3 PICK             \ addr
-        3 PICK             \ len
-        memcpy
-
-    stream>buf-pos OVER SWAP +!
-    NIP
-;
-
+\
+\ INCLUDE / REQUIRE
+\
 
 \ Read from already open file descriptor
 : INCLUDE-FILE ( fd -- )
@@ -1237,37 +1313,12 @@ VARIABLE word-len
 : INCLUDE ( -- ) BL WORD INCLUDED ;
 
 STRUCT{
-    ptr%        FIELD required>next
-    char% 128 * FIELD required>name
+    cell%       FIELD required>next
+    byte% 128 * FIELD required>name
 }STRUCT required%
 
 VARIABLE required-files
     0 required-files !
-
-: streq? ( addr1 u addr2 u -- b )
-    \ Check string len first
-    ROT ( a1 a2 u u )
-    OVER = UNLESS        \ length mismatch
-        3DROP FALSE EXIT
-    ELSE ?DUP UNLESS     \ length match, but both are zero
-        2DROP TRUE EXIT
-    THEN THEN
-
-    0 DO
-        ( a1 a2 )
-        DUP C@        ( a1 a2 c2 )
-        ROT DUP C@    ( a2 c2 a1 c1 )
-        ROT = UNLESS
-            2DROP
-            UNLOOP
-            FALSE EXIT
-        THEN
-        1+ SWAP 1+
-    LOOP
-
-    2DROP
-    TRUE
-;
 
 : required? ( addr u -- b )
     required-files @
@@ -1311,66 +1362,9 @@ VARIABLE required-files
 \ Just like `INCLUDE`, but checking if the import has already been done.
 : REQUIRE ( -- ) BL WORD REQUIRED ;
 
-: stream-read ( addr len s -- len err )
-    \ check if we have enough buffered data to avoid calling read()
-    DUP stream-buffer-count ( addr len s cnt )
-    2 PICK >= IF            ( addr len s )
-        stream-buffer-read
-        success EXIT
-    THEN
-
-    DUP stream-buffer-count 0> IF
-        \ we need to read more data, first copy whatever was in the
-        \ buffer
-        DUP stream>buf-pos @
-        OVER stream-buffer-count DUP >R
-        4 PICK SWAP memcpy             ( addr len s )
-        ROT R@ + -ROT                  ( addr' len s )
-        SWAP R@ - SWAP                 ( addr rem' s )
-    ELSE
-        0 >R
-    THEN
-
-    \ Refill the buffer, read next `BUFSIZE` bytes from stream
-    DUP stream-buffer-refill
-
-    ?DUP IF
-        ." err read:" DUP . CR
-        >R 2DROP
-        0 R>
-        EXIT
-    THEN
-
-    ?DUP UNLESS             \ check that we've read something
-        3DROP
-        R> SUCCESS
-        EXIT
-    THEN
-
-    SWAP >R MIN R>          \ avoid reading past end of buffer
-    stream-buffer-read      ( addr rem s -- len )
-    R> +                    \ add whatever we transfered from the old buffer
-    SUCCESS
-;
-
-VARIABLE key-buf
-
-\ read single character from stream, return EOF on end
-: stream-key ( s -- ch e )
-    \ push pointer to own address to stack, we'll write our character here.
-    key-buf
-    1
-    ROT
-    stream-read THROW
-
-    0= IF
-        EOF success
-        EXIT
-    THEN
-
-    key-buf C@
-    success
-;
+\
+\ Stream-aware KEY and WORD
+\
 
 \ Read next line of input from current file
 : REFILL ( -- ok )
@@ -1516,6 +1510,7 @@ VARIABLE key-buf
 
     -1 push-stream
     streams @
+        9000 OVER stream>lineno !      \ bogus line number, but will let us find the offset
         2DUP stream>buf-end !          \ Update buffer length of Forth impl
         stream>buf SWAP memcpy         \ Copy bytes from native buffer
 
@@ -1534,11 +1529,12 @@ VARIABLE key-buf
     \ implementations are no longer running
 ; EXECUTE
 
-VARIABLE argc
-    (argc) @ argc !
+\
+\ CLI entry point
+\
 
-VARIABLE argv
-    (argv) @ argv !
+VARIABLE argc (argc) @ argc !
+VARIABLE argv (argv) @ argv !
 
 : SHIFT-ARGS ( -- )
     argc @ ?DUP UNLESS EXIT THEN
@@ -1568,8 +1564,7 @@ VARIABLE argv
 
     argc @ 1 >= IF
         BEGIN NEXT-ARG DUP WHILE
-            \ FIXME c-str> length is wrong when it comes from a real C string
-            2DUP 1+ s" -h" streq? IF
+            2DUP s" -h" streq? IF
                 2DROP print-usage
             ELSE
                 INCLUDED
@@ -1579,6 +1574,6 @@ VARIABLE argv
     ELSE
         ." [ " UNUSED CELL / . ." CELLS FREE ]" cr
         ." arm64th ok." cr
-        s" /dev/tty" INCLUDED
+        stdin INCLUDE-FILE
     THEN
 ; EXECUTE
