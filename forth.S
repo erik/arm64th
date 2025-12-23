@@ -369,14 +369,6 @@ DEFINE_CODE "0BRANCH", 7, 0, ZBRANCH, BRANCH
 
 ; Given a word address, return the address of the first executable code of the
 ; word
-;
-; >CFA = "to Code Field Address"
-DEFINE_CODE ">CFA", 4, 0, TO_CFA, ZBRANCH
-    POP_DS  x0              ; load top of stack
-    bl      _to_cfa
-    PUSH_DS x0              ; push code pointer onto stack
-    NEXT
-
 _to_cfa:
     add    x1, x0, #9
     ldrb   w2, [x1]            ; w2 = name length
@@ -388,7 +380,7 @@ _to_cfa:
     ret
 
 ; Create a dictionary header for a new word
-DEFINE_CODE "CREATE", 6, 0, CREATE, TO_CFA
+DEFINE_CODE "CREATE", 6, 0, CREATE, ZBRANCH
     mov x0, ' '              ; delimiter
     bl _read_word
 
