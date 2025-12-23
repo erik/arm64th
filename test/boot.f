@@ -333,3 +333,14 @@ T{ 1 INCLUDE ./test/data/_incr.f
 T{ 1 REQUIRE ./test/data/_incr.f
      REQUIRE ./test/data/_incr.f
    -> 2 }T
+
+TESTING" [if]"
+T{ TRUE  [IF] 1 [THEN]           -> 1 }T
+T{ TRUE  [IF] 1 [ELSE] 2 [THEN]  -> 1 }T
+T{ TRUE  [iF] 1 [eLSe] 2 [THEn]  -> 1 }T \ case insensitive match
+T{ FALSE [IF] 1 [THEN]          -> }T
+T{ FALSE [IF] 1 [ELSE] 2 [THEN] -> 2 }T
+T{ TRUE  [IF] 1 TRUE  [IF] 2 [ELSE] 3 [THEN] [ELSE] 4 [THEN] -> 1 2 }T
+T{ FALSE [IF] 1 TRUE  [IF] 2 [ELSE] 3 [THEN] [ELSE] 4 [THEN] -> 4 }T
+T{ TRUE  [IF] 1 FALSE [IF] 2 [ELSE] 3 [THEN] [ELSE] 4 [THEN] -> 1 3 }T
+T{ FALSE [IF] 1 FALSE [IF] 2 [ELSE] 3 [THEN] [ELSE] 4 [THEN] -> 4 }T

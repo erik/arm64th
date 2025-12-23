@@ -1499,6 +1499,30 @@ VARIABLE required-files
     ]
 ;
 
+: [ELSE] IMMEDIATE ( -- )
+    1
+    BEGIN
+        BEGIN
+            BL WORD DUP
+        WHILE
+            upcase
+            2DUP s" [IF]" streq? IF 2DROP 1+ ELSE
+            2DUP s" [ELSE]" streq? IF 2DROP 1- DUP IF 1+ THEN ELSE
+            s" [THEN]" streq? IF 1-
+            THEN THEN THEN
+
+            ?DUP 0= IF EXIT THEN
+        REPEAT 2DROP
+    0= UNTIL
+    DROP
+;
+: [IF] IMMEDIATE ( flag -- ) 0= IF POSTPONE [ELSE] THEN ;
+: [THEN] IMMEDIATE ;
+
+\
+\ Bootstrapping
+\
+
 :NONAME
     \ Transfer remaining content of boot.f into Forth-hosted buffer.
     \
