@@ -130,12 +130,14 @@ VARIABLE stack-effect-ptr
     begin
         2dup >=
     while
-        dup @
-        dup h.
-        find-containing-word ?DUP IF
+        DUP @ DUP h.
+        DUP SP@ SP0 BETWEEN IF
+            @ hex. ." [saved sp]"
+        ELSE find-containing-word ?DUP IF
             word>name ?DUP unless DROP s" :NONAME" THEN tell space
         ELSE
-        ." (unk) " THEN
+            ." [unknown] "
+        THEN THEN
         cr
         cell+
     repeat 2drop
