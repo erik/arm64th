@@ -8,10 +8,10 @@
 
 A Forth for Apple Silicon bootstrapped from a small kernel written in arm64
 assembly. This is a 64 bit, indirect threaded Forth which runs on recent
-versions of Mac OS.
+versions of macOS.
 
 It's "mostly standard", but doesn't implement every common word. Use this if
-you're curious, not if you need a production system.
+you're curious how to bootstrap Forth, not if you need a production system.
 
 There are no dependencies, but you'll need the standard Apple development
 toolchain (i.e. clang) to build it.
