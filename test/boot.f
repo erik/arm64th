@@ -65,6 +65,9 @@ T{ 3 2 1 2 PICK -> 3 2 1 3 }T
 T{ 1 2 3 ROT   -> 2 3 1 }T
 T{ 1 2 3 -ROT  -> 3 1 2 }T
 T{ 1 2 3 ROT -ROT -> 1 2 3 }T
+T{ 1 2 3 2 ROLL -> 2 3 1 }T
+T{ 1 2 3 1 ROLL -> 1 3 2 }T
+T{ 1 2 3 0 ROLL -> 1 2 3 }T
 T{ 1 2 NIP     -> 2 }T
 T{ 1 2 2DUP    -> 1 2 1 2 }T
 T{ 1 2 3 3DUP  -> 1 2 3 1 2 3 }T

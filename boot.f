@@ -388,6 +388,12 @@
     LATEST @ >CFA ,
 ;
 
+\ Generalization of ROT, SWAP, etc. 2 ROLL = ROT, 1 ROLL = SWAP
+: ROLL  ( x0 .. xi i -- xi .. x0 )
+    ?DUP UNLESS EXIT THEN
+    SWAP >R 1- RECURSE R> SWAP
+;
+
 \ CASE c1 OF v1 ENDOF c2 OF v2 ENDOF ... default ENDCASE
 \
 \ This word pushes a marker word to the stack to be consumed by the child
